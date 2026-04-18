@@ -1,0 +1,48 @@
+name: 'manavarya-bot PR Reviewer'
+description: 'AI PR reviewer powered by a local Ollama model (default qwen2.5-coder).'
+author: 'manavarya'
+branding:
+  icon: 'git-pull-request'
+  color: 'purple'
+
+inputs:
+  github-token:
+    description: 'GitHub token used to fetch the PR diff and post the review comment.'
+    required: false
+    default: ${{ github.token }}
+  ollama-url:
+    description: 'Base URL of the Ollama server (reachable from the runner).'
+    required: false
+    default: 'http://localhost:11434'
+  model:
+    description: 'Ollama model tag to use for review.'
+    required: false
+    default: 'qwen2.5-coder:7b'
+  max-file-bytes:
+    description: 'Maximum bytes of a single file content included in the prompt.'
+    required: false
+    default: '20000'
+  max-total-bytes:
+    description: 'Maximum total bytes of file content included in the prompt.'
+    required: false
+    default: '120000'
+  min-confidence:
+    description: 'Drop issues below this confidence (0.0 - 1.0).'
+    required: false
+    default: '0.65'
+  dry-run:
+    description: 'If true, do not post a comment; print the report to the job log only.'
+    required: false
+    default: 'false'
+
+outputs:
+  risk-score:
+    description: 'Computed risk score 1-10.'
+  quality-score:
+    description: 'Computed code quality score 0-100.'
+  issue-count:
+    description: 'Number of issues after confidence filtering.'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

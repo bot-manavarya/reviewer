@@ -1,0 +1,40 @@
+name: manavarya-bot review (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        type: string
+        required: false
+        default: 'qwen2.5-coder:7b'
+      ollama-url:
+        type: string
+        required: false
+        default: 'http://localhost:11434'
+      runner-label:
+        type: string
+        required: false
+        default: 'ollama'
+      dry-run:
+        type: string
+        required: false
+        default: 'false'
+    secrets:
+      bot-token:
+        required: true
+
+jobs:
+  review:
+    runs-on: [self-hosted, "${{ inputs.runner-label }}"]
+    permissions:
+      pull-requests: write
+      contents: read
+      issues: write
+    steps:
+      - name: Run manavarya-bot
+        uses: bot-manavarya/reviewer@main
+        with:
+          github-token: ${{ secrets.bot-token }}
+          ollama-url: ${{ inputs.ollama-url }}
+          model: ${{ inputs.model }}
+          dry-run: ${{ inputs.dry-run }}

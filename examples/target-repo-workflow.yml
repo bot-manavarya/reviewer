@@ -1,0 +1,14 @@
+name: manavarya-bot review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    if: ${{ github.event.pull_request.draft == false }}
+    uses: bot-manavarya/reviewer/.github/workflows/review.yml@main
+    with:
+      model: 'qwen2.5-coder:7b'
+    secrets:
+      bot-token: ${{ secrets.MANAVARYA_BOT_TOKEN }}
