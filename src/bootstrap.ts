@@ -239,17 +239,18 @@ async function runOnce(
 }
 
 async function main() {
-  const botPat = required('BOT_PAT');
+  // BOT_CLASSIC_PAT is the classic PAT with `repo` + `workflow` scopes.
+  // It's the only token that works across owner boundaries for outside
+  // collaborators. We use it for ALL operations.
+  //
+  // BOT_PAT (fine-grained) and GEMINI_API_KEY are what gets provisioned
+  // into each target repo as secrets.
+  const classicPat = required('BOT_CLASSIC_PAT');
+  const botTokenForTargets = process.env.BOT_PAT || classicPat;
   const geminiKey = required('GEMINI_API_KEY');
-  const classicPat = process.env.BOT_CLASSIC_PAT;
 
-  const octo = new Octokit({ auth: botPat });
-  const accepter = classicPat ? new Octokit({ auth: classicPat }) : octo;
-  if (!classicPat) {
-    console.warn(
-      'BOT_CLASSIC_PAT not set. Accepting invitations will fail (fine-grained PATs lack permission).'
-    );
-  }
+  const octo = new Octokit({ auth: classicPat });
+  const accepter = octo;
 
   const me = await octo.rest.users.getAuthenticated();
   console.log(`Authenticated as ${me.data.login}${DRY ? ' (dry-run)' : ''}`);
@@ -258,7 +259,7 @@ async function main() {
   const maxRuntimeSeconds = Number(process.env.MAX_RUNTIME_SECONDS || '280');
 
   if (pollSeconds <= 0) {
-    const { ok, failed } = await runOnce(octo, accepter, botPat, geminiKey);
+    const { ok, failed } = await runOnce(octo, accepter, botTokenForTargets, geminiKey);
     console.log(`\n--- summary ---`);
     console.log(`OK: ${ok}  Failed: ${failed.length}`);
     if (failed.length) {
@@ -277,7 +278,7 @@ async function main() {
     iter++;
     console.log(`\n[iter ${iter}] ${new Date().toISOString()}`);
     try {
-      await runOnce(octo, accepter, botPat, geminiKey);
+      await runOnce(octo, accepter, botTokenForTargets, geminiKey);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`iter ${iter} failed: ${msg}`);
