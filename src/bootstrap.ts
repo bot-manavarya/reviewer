@@ -30,7 +30,7 @@ jobs:
     uses: bot-manavarya/reviewer/.github/workflows/review.yml@main
     with:
       provider: 'gemini'
-      model: 'gemini-1.5-flash'
+      model: 'gemini-2.5-flash'
     secrets:
       bot-token: \${{ secrets.MANAVARYA_BOT_TOKEN }}
       gemini-api-key: \${{ secrets.GEMINI_API_KEY }}
@@ -160,18 +160,9 @@ async function ensureSecret(
   value: string,
   cache: Map<string, { key: string; key_id: string }>
 ): Promise<void> {
-  // Skip if the secret already exists (we can't read the value to compare; we
-  // assume the user stored the right one the first time, or rotated it
-  // themselves via the bootstrap workflow secrets).
-  try {
-    await octo.rest.actions.getRepoSecret({ owner, repo, secret_name: name });
-    console.log(`  secret ${name} exists`);
-    return;
-  } catch (e) {
-    const status = (e as { status?: number }).status;
-    if (status !== 404) throw e;
-  }
-
+  // Always upsert. We can't read the stored value to compare, so we rewrite
+  // every iteration. This also means rotating a secret in the reviewer repo
+  // automatically propagates to all target repos on the next poll.
   const cacheKey = `${owner}/${repo}`;
   let pub = cache.get(cacheKey);
   if (!pub) {
@@ -180,7 +171,7 @@ async function ensureSecret(
     cache.set(cacheKey, pub);
   }
 
-  console.log(`  creating secret ${name}`);
+  console.log(`  upserting secret ${name}`);
   if (DRY) return;
 
   const encrypted_value = await encryptSecret(pub.key, value);
@@ -246,7 +237,10 @@ async function main() {
   // BOT_PAT (fine-grained) and GEMINI_API_KEY are what gets provisioned
   // into each target repo as secrets.
   const classicPat = required('BOT_CLASSIC_PAT');
-  const botTokenForTargets = process.env.BOT_PAT || classicPat;
+  // Always use the classic PAT as MANAVARYA_BOT_TOKEN in target repos.
+  // Fine-grained PATs cannot read/write across owner boundaries, so they
+  // can't post review comments from the reviewer workflow.
+  const botTokenForTargets = classicPat;
   const geminiKey = required('GEMINI_API_KEY');
 
   const octo = new Octokit({ auth: classicPat });
