@@ -1,5 +1,5 @@
 name: 'manavarya-bot PR Reviewer'
-description: 'AI PR reviewer powered by a local Ollama model (default qwen2.5-coder).'
+description: 'AI PR reviewer. Default provider: Google Gemini (free tier). Also supports local Ollama.'
 author: 'manavarya'
 branding:
   icon: 'git-pull-request'
@@ -10,14 +10,22 @@ inputs:
     description: 'GitHub token used to fetch the PR diff and post the review comment.'
     required: false
     default: ${{ github.token }}
+  provider:
+    description: 'LLM provider: "gemini" (default) or "ollama".'
+    required: false
+    default: 'gemini'
+  model:
+    description: 'Model name. Defaults: gemini-2.0-flash (gemini) / qwen2.5-coder:7b (ollama).'
+    required: false
+    default: ''
+  gemini-api-key:
+    description: 'Google AI Studio API key. Required when provider=gemini.'
+    required: false
+    default: ''
   ollama-url:
-    description: 'Base URL of the Ollama server (reachable from the runner).'
+    description: 'Base URL of the Ollama server. Only used when provider=ollama.'
     required: false
     default: 'http://localhost:11434'
-  model:
-    description: 'Ollama model tag to use for review.'
-    required: false
-    default: 'qwen2.5-coder:7b'
   max-file-bytes:
     description: 'Maximum bytes of a single file content included in the prompt.'
     required: false

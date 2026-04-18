@@ -1,26 +1,50 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { fetchPrContext, upsertReviewComment } from './github';
-import { chatJson, ensureModel } from './ollama';
+import * as ollama from './ollama';
+import * as gemini from './gemini';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { parseReview } from './schema';
 import { finalize } from './scoring';
 import { renderMarkdown } from './markdown';
 
+type Provider = 'gemini' | 'ollama';
+
 async function run(): Promise<void> {
   try {
     const token = core.getInput('github-token', { required: true });
+    const provider = (
+      (core.getInput('provider') || 'gemini').toLowerCase()
+    ) as Provider;
+    const modelInput = core.getInput('model');
     const ollamaUrl = core.getInput('ollama-url') || 'http://localhost:11434';
-    const model = core.getInput('model') || 'qwen2.5-coder:7b';
+    const geminiKey = core.getInput('gemini-api-key');
     const maxFileBytes = Number(core.getInput('max-file-bytes') || '20000');
     const maxTotalBytes = Number(core.getInput('max-total-bytes') || '120000');
     const minConfidence = Number(core.getInput('min-confidence') || '0.65');
     const dryRun = (core.getInput('dry-run') || 'false').toLowerCase() === 'true';
 
+    const model =
+      modelInput ||
+      (provider === 'gemini' ? 'gemini-2.0-flash' : 'qwen2.5-coder:7b');
+
+    if (provider !== 'gemini' && provider !== 'ollama') {
+      throw new Error(
+        `Unknown provider "${provider}". Must be "gemini" or "ollama".`
+      );
+    }
+    if (provider === 'gemini' && !geminiKey) {
+      throw new Error(
+        'provider=gemini requires input "gemini-api-key" (store the key in a repo secret).'
+      );
+    }
+
     const octokit = github.getOctokit(token);
 
-    core.info(`Using model ${model} at ${ollamaUrl}`);
-    await ensureModel({ baseUrl: ollamaUrl, model });
+    core.info(`Provider: ${provider} · Model: ${model}`);
+    if (provider === 'ollama') {
+      await ollama.ensureModel({ baseUrl: ollamaUrl, model });
+    }
 
     core.info('Fetching PR context…');
     const ctx = await fetchPrContext(octokit, maxFileBytes, maxTotalBytes);
@@ -39,12 +63,19 @@ async function run(): Promise<void> {
       files: ctx.files,
     });
 
-    core.info('Calling Ollama…');
-    const raw = await chatJson(
-      { baseUrl: ollamaUrl, model, temperature: 0.1 },
-      SYSTEM_PROMPT,
-      user
-    );
+    core.info(`Calling ${provider}…`);
+    const raw =
+      provider === 'gemini'
+        ? await gemini.chatJson(
+            { apiKey: geminiKey, model, temperature: 0.1 },
+            SYSTEM_PROMPT,
+            user
+          )
+        : await ollama.chatJson(
+            { baseUrl: ollamaUrl, model, temperature: 0.1 },
+            SYSTEM_PROMPT,
+            user
+          );
 
     const parsed = parseReview(raw);
     parsed.summary.files_changed = ctx.filesChanged;

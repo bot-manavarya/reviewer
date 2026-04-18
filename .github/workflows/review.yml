@@ -3,10 +3,14 @@ name: manavarya-bot review (reusable)
 on:
   workflow_call:
     inputs:
+      provider:
+        type: string
+        required: false
+        default: 'gemini'
       model:
         type: string
         required: false
-        default: 'qwen2.5-coder:7b'
+        default: ''
       ollama-url:
         type: string
         required: false
@@ -14,7 +18,7 @@ on:
       runner-label:
         type: string
         required: false
-        default: 'ollama'
+        default: ''
       dry-run:
         type: string
         required: false
@@ -22,10 +26,12 @@ on:
     secrets:
       bot-token:
         required: true
+      gemini-api-key:
+        required: false
 
 jobs:
   review:
-    runs-on: [self-hosted, "${{ inputs.runner-label }}"]
+    runs-on: ${{ inputs.runner-label == '' && 'ubuntu-latest' || fromJSON(format('["self-hosted","{0}"]', inputs.runner-label)) }}
     permissions:
       pull-requests: write
       contents: read
@@ -35,6 +41,8 @@ jobs:
         uses: bot-manavarya/reviewer@main
         with:
           github-token: ${{ secrets.bot-token }}
-          ollama-url: ${{ inputs.ollama-url }}
+          provider: ${{ inputs.provider }}
           model: ${{ inputs.model }}
+          gemini-api-key: ${{ secrets.gemini-api-key }}
+          ollama-url: ${{ inputs.ollama-url }}
           dry-run: ${{ inputs.dry-run }}
