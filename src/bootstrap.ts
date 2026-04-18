@@ -178,15 +178,11 @@ async function ensureSecret(
   });
 }
 
-async function main() {
-  const botPat = required('BOT_PAT');
-  const geminiKey = required('GEMINI_API_KEY');
-
-  const octo = new Octokit({ auth: botPat });
-
-  const me = await octo.rest.users.getAuthenticated();
-  console.log(`Authenticated as ${me.data.login}${DRY ? ' (dry-run)' : ''}`);
-
+async function runOnce(
+  octo: Octokit,
+  botPat: string,
+  geminiKey: string
+): Promise<{ ok: number; failed: string[] }> {
   await acceptInvites(octo);
 
   const repos = await listCollabRepos(octo);
@@ -197,7 +193,7 @@ async function main() {
 
   for (const r of repos) {
     const full = `${r.owner.login}/${r.name}`;
-    console.log(`\n--> ${full}`);
+    console.log(`--> ${full}`);
     try {
       await ensureWorkflow(octo, r.owner.login, r.name);
       await ensureSecret(
@@ -223,12 +219,52 @@ async function main() {
     }
   }
 
-  console.log('\n--- summary ---');
-  console.log(`OK: ${repos.length - failed.length}  Failed: ${failed.length}`);
-  if (failed.length) {
-    for (const f of failed) console.log(`  - ${f}`);
-    process.exit(1);
+  return { ok: repos.length - failed.length, failed };
+}
+
+async function main() {
+  const botPat = required('BOT_PAT');
+  const geminiKey = required('GEMINI_API_KEY');
+
+  const octo = new Octokit({ auth: botPat });
+
+  const me = await octo.rest.users.getAuthenticated();
+  console.log(`Authenticated as ${me.data.login}${DRY ? ' (dry-run)' : ''}`);
+
+  const pollSeconds = Number(process.env.POLL_SECONDS || '0');
+  const maxRuntimeSeconds = Number(process.env.MAX_RUNTIME_SECONDS || '280');
+
+  if (pollSeconds <= 0) {
+    const { ok, failed } = await runOnce(octo, botPat, geminiKey);
+    console.log(`\n--- summary ---`);
+    console.log(`OK: ${ok}  Failed: ${failed.length}`);
+    if (failed.length) {
+      for (const f of failed) console.log(`  - ${f}`);
+      process.exit(1);
+    }
+    return;
   }
+
+  const deadline = Date.now() + maxRuntimeSeconds * 1000;
+  let iter = 0;
+  console.log(
+    `Polling every ${pollSeconds}s for up to ${maxRuntimeSeconds}s...`
+  );
+  while (Date.now() < deadline) {
+    iter++;
+    console.log(`\n[iter ${iter}] ${new Date().toISOString()}`);
+    try {
+      await runOnce(octo, botPat, geminiKey);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`iter ${iter} failed: ${msg}`);
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const sleepMs = Math.min(pollSeconds * 1000, remaining);
+    await new Promise((r) => setTimeout(r, sleepMs));
+  }
+  console.log(`\nDone after ${iter} iterations.`);
 }
 
 main().catch((e) => {
