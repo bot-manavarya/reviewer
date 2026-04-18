@@ -2,7 +2,9 @@ name: manage collaborations
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/30 * * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry-run:
@@ -17,18 +19,20 @@ concurrency:
 jobs:
   manage:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run manager (poll ~15s for ~5m)
+      - name: Run manager (continuous poll, self-chaining)
         env:
           BOT_PAT: ${{ secrets.BOT_PAT }}
           BOT_CLASSIC_PAT: ${{ secrets.BOT_CLASSIC_PAT }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
           POLL_SECONDS: '15'
-          MAX_RUNTIME_SECONDS: '280'
+          MAX_RUNTIME_SECONDS: '21000'
+          SELF_CHAIN: 'true'
+          SELF_CHAIN_WORKFLOW: 'manage.yml'
         run: node dist-bootstrap/index.js

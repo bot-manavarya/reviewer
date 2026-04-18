@@ -283,6 +283,29 @@ async function main() {
     await new Promise((r) => setTimeout(r, sleepMs));
   }
   console.log(`\nDone after ${iter} iterations.`);
+
+  if ((process.env.SELF_CHAIN || '').toLowerCase() === 'true') {
+    const selfRepo = process.env.GITHUB_REPOSITORY; // "owner/repo"
+    const workflowFile = process.env.SELF_CHAIN_WORKFLOW || 'manage.yml';
+    const ref = process.env.GITHUB_REF_NAME || 'main';
+    if (selfRepo) {
+      const [selfOwner, selfRepoName] = selfRepo.split('/');
+      try {
+        console.log(
+          `Chaining next run of ${workflowFile} on ${selfRepo}@${ref}`
+        );
+        await octo.rest.actions.createWorkflowDispatch({
+          owner: selfOwner,
+          repo: selfRepoName,
+          workflow_id: workflowFile,
+          ref,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`Self-chain dispatch failed: ${msg}`);
+      }
+    }
+  }
 }
 
 main().catch((e) => {
