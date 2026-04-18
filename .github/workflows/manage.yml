@@ -1,0 +1,30 @@
+name: manage collaborations
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Preview actions without writing'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: manage-collaborations
+  cancel-in-progress: false
+
+jobs:
+  manage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run manager
+        env:
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DRY_RUN: ${{ inputs.dry-run || 'false' }}
+        run: node dist-bootstrap/index.js

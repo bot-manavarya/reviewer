@@ -1,21 +1,27 @@
 {
   "name": "manavarya-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "AI PR reviewer that uses a local Ollama model (qwen2.5-coder).",
+  "description": "AI PR reviewer for @Manavarya09's repos. Default provider: Google Gemini.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "ncc build src/main.ts -o dist --minify --source-map --license licenses.txt",
+    "build:action": "ncc build src/main.ts -o dist --minify --source-map --license licenses.txt",
+    "build:bootstrap": "ncc build src/bootstrap.ts -o dist-bootstrap --minify --source-map --license licenses.txt",
+    "build": "npm run build:action && npm run build:bootstrap",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "local": "ts-node src/cli.ts"
+    "local": "ts-node src/cli.ts",
+    "bootstrap:local": "ts-node src/bootstrap.ts"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.0",
+    "@octokit/rest": "^21.0.2",
+    "libsodium-wrappers": "^0.7.15",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^20.12.12",
     "@vercel/ncc": "^0.38.1",
     "ts-node": "^10.9.2",
