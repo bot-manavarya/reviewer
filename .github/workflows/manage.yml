@@ -26,6 +26,7 @@ jobs:
       - name: Run manager (poll ~15s for ~5m)
         env:
           BOT_PAT: ${{ secrets.BOT_PAT }}
+          BOT_CLASSIC_PAT: ${{ secrets.BOT_CLASSIC_PAT }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
           POLL_SECONDS: '15'

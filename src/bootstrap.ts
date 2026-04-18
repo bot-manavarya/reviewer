@@ -53,7 +53,10 @@ async function encryptSecret(publicKey: string, value: string): Promise<string> 
   return sodium.to_base64(enc, sodium.base64_variants.ORIGINAL);
 }
 
-async function acceptInvites(octo: Octokit): Promise<void> {
+async function acceptInvites(
+  octo: Octokit,
+  accepter: Octokit
+): Promise<void> {
   const invites = await octo.paginate(
     octo.rest.repos.listInvitationsForAuthenticatedUser,
     { per_page: 100 }
@@ -62,9 +65,21 @@ async function acceptInvites(octo: Octokit): Promise<void> {
     const repoFull = inv.repository.full_name;
     console.log(`[invite] accepting ${repoFull}`);
     if (DRY) continue;
-    await octo.rest.repos.acceptInvitationForAuthenticatedUser({
-      invitation_id: inv.id,
-    });
+    try {
+      await accepter.rest.repos.acceptInvitationForAuthenticatedUser({
+        invitation_id: inv.id,
+      });
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      if (status === 403) {
+        throw new Error(
+          'Accept-invite failed with 403. Fine-grained PATs cannot accept repo invitations. ' +
+            'Set BOT_CLASSIC_PAT secret to a classic PAT with the "repo" scope ' +
+            '(https://github.com/settings/tokens/new?scopes=repo).'
+        );
+      }
+      throw e;
+    }
   }
   if (invites.length === 0) console.log('[invite] no pending invitations');
 }
@@ -180,10 +195,11 @@ async function ensureSecret(
 
 async function runOnce(
   octo: Octokit,
+  accepter: Octokit,
   botPat: string,
   geminiKey: string
 ): Promise<{ ok: number; failed: string[] }> {
-  await acceptInvites(octo);
+  await acceptInvites(octo, accepter);
 
   const repos = await listCollabRepos(octo);
   console.log(`Found ${repos.length} collaborator repo(s).`);
@@ -225,8 +241,15 @@ async function runOnce(
 async function main() {
   const botPat = required('BOT_PAT');
   const geminiKey = required('GEMINI_API_KEY');
+  const classicPat = process.env.BOT_CLASSIC_PAT;
 
   const octo = new Octokit({ auth: botPat });
+  const accepter = classicPat ? new Octokit({ auth: classicPat }) : octo;
+  if (!classicPat) {
+    console.warn(
+      'BOT_CLASSIC_PAT not set. Accepting invitations will fail (fine-grained PATs lack permission).'
+    );
+  }
 
   const me = await octo.rest.users.getAuthenticated();
   console.log(`Authenticated as ${me.data.login}${DRY ? ' (dry-run)' : ''}`);
@@ -235,7 +258,7 @@ async function main() {
   const maxRuntimeSeconds = Number(process.env.MAX_RUNTIME_SECONDS || '280');
 
   if (pollSeconds <= 0) {
-    const { ok, failed } = await runOnce(octo, botPat, geminiKey);
+    const { ok, failed } = await runOnce(octo, accepter, botPat, geminiKey);
     console.log(`\n--- summary ---`);
     console.log(`OK: ${ok}  Failed: ${failed.length}`);
     if (failed.length) {
@@ -254,7 +277,7 @@ async function main() {
     iter++;
     console.log(`\n[iter ${iter}] ${new Date().toISOString()}`);
     try {
-      await runOnce(octo, botPat, geminiKey);
+      await runOnce(octo, accepter, botPat, geminiKey);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`iter ${iter} failed: ${msg}`);
