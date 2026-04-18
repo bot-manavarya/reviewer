@@ -6,8 +6,8 @@ import * as gemini from './gemini';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { parseReview } from './schema';
 import { finalize } from './scoring';
-import { renderMarkdown } from './markdown';
-import { renderFailureMarkdown } from './markdown';
+import { renderMarkdown, renderFailureMarkdown } from './markdown';
+import { checkAndIncrementDaily } from './ratelimit';
 
 type Provider = 'gemini' | 'ollama';
 
@@ -51,6 +51,7 @@ async function run(): Promise<void> {
   const maxFileBytes = Number(core.getInput('max-file-bytes') || '20000');
   const maxTotalBytes = Number(core.getInput('max-total-bytes') || '120000');
   const minConfidence = Number(core.getInput('min-confidence') || '0.65');
+  const maxDailyReviews = Number(core.getInput('max-daily-reviews') || '50');
   const dryRun = (core.getInput('dry-run') || 'false').toLowerCase() === 'true';
 
   const model =
@@ -81,6 +82,21 @@ async function run(): Promise<void> {
     core.info('Fetching PR context…');
     const ctx = await fetchPrContext(octokit, maxFileBytes, maxTotalBytes);
     pr = { owner: ctx.owner, repo: ctx.repo, prNumber: ctx.prNumber };
+
+    if (maxDailyReviews > 0) {
+      const { allowed, used, limit } = await checkAndIncrementDaily(
+        octokit,
+        ctx.owner,
+        ctx.repo,
+        maxDailyReviews
+      );
+      core.info(`Daily usage: ${used}/${limit}`);
+      if (!allowed) {
+        throw new Error(
+          `Rate limited locally: ${used}/${limit} reviews used today for this repo. Resets at UTC midnight.`
+        );
+      }
+    }
     core.info(
       `PR #${ctx.prNumber}: ${ctx.filesChanged} files, +${ctx.linesAdded}/-${ctx.linesRemoved}, ${ctx.files.length} files loaded for context.`
     );

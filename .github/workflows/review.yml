@@ -23,6 +23,10 @@ on:
         type: string
         required: false
         default: 'false'
+      max-daily-reviews:
+        type: string
+        required: false
+        default: '50'
     secrets:
       bot-token:
         required: true
@@ -46,3 +50,4 @@ jobs:
           gemini-api-key: ${{ secrets.gemini-api-key }}
           ollama-url: ${{ inputs.ollama-url }}
           dry-run: ${{ inputs.dry-run }}
+          max-daily-reviews: ${{ inputs.max-daily-reviews }}

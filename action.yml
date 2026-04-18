@@ -38,6 +38,10 @@ inputs:
     description: 'Drop issues below this confidence (0.0 - 1.0).'
     required: false
     default: '0.65'
+  max-daily-reviews:
+    description: 'Per-repo daily review cap. 0 to disable. Counter persists on a manavarya-bot-state branch.'
+    required: false
+    default: '50'
   dry-run:
     description: 'If true, do not post a comment; print the report to the job log only.'
     required: false

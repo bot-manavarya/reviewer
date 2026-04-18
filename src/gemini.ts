@@ -1,7 +1,10 @@
+import { withRetry } from './ratelimit';
+
 export interface GeminiOptions {
   apiKey: string;
   model: string;
   temperature?: number;
+  retryAttempts?: number;
 }
 
 interface OpenAIChatResponse {
@@ -27,16 +30,25 @@ export async function chatJson(
     ],
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${opts.apiKey}`,
+  const { res, text } = await withRetry(
+    async () => {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${opts.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const t = await r.text();
+      if (r.status === 429 || r.status === 503 || r.status === 504) {
+        throw new Error(`Gemini ${r.status}: ${t.slice(0, 500)}`);
+      }
+      return { res: r, text: t };
     },
-    body: JSON.stringify(body),
-  });
+    { attempts: opts.retryAttempts ?? 4, baseMs: 2000 }
+  );
 
-  const text = await res.text();
   if (!res.ok) {
     throw new Error(
       `Gemini ${res.status} ${res.statusText}: ${text.slice(0, 500)}`
