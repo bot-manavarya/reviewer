@@ -143,11 +143,11 @@ async function ensureWorkflow(
     sha: existingSha,
     committer: {
       name: 'bot-manavarya',
-      email: 'bot-manavarya@users.noreply.github.com',
+      email: '277266521+bot-manavarya@users.noreply.github.com',
     },
     author: {
       name: 'bot-manavarya',
-      email: 'bot-manavarya@users.noreply.github.com',
+      email: '277266521+bot-manavarya@users.noreply.github.com',
     },
   });
 }
