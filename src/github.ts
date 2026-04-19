@@ -1,5 +1,7 @@
 import * as github from '@actions/github';
 import { BOT_MARKER } from './markdown';
+import type { Issue } from './schema';
+import { isLineInDiff, parseDiff, type DiffIndex } from './diff';
 
 type Octokit = ReturnType<typeof github.getOctokit>;
 
@@ -29,11 +31,36 @@ export async function fetchPrContext(
   maxTotalBytes: number
 ): Promise<PrContext> {
   const ctx = github.context;
-  const pr = ctx.payload.pull_request;
-  if (!pr) throw new Error('This action must run on a pull_request event.');
+  let pr = ctx.payload.pull_request as
+    | {
+        number: number;
+        title?: string;
+        body?: string;
+        head: { sha: string };
+      }
+    | undefined;
 
   const owner = ctx.repo.owner;
   const repo = ctx.repo.repo;
+
+  // issue_comment events don't ship a pull_request payload — fetch it.
+  if (!pr && ctx.payload.issue?.pull_request) {
+    const issueNumber = ctx.payload.issue.number;
+    const { data } = await octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: issueNumber,
+    });
+    pr = {
+      number: data.number,
+      title: data.title,
+      body: data.body ?? '',
+      head: { sha: data.head.sha },
+    };
+  }
+
+  if (!pr) throw new Error('This action must run on a pull_request or pr comment event.');
+
   const prNumber = pr.number;
   const headSha: string = pr.head.sha;
 
@@ -159,4 +186,143 @@ export async function upsertReviewComment(
     issue_number: prNumber,
     body,
   });
+}
+
+export async function postInlineReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  headSha: string,
+  diff: string,
+  issues: Issue[],
+  summary: string
+): Promise<{ posted: number; orphans: Issue[] }> {
+  const diffIdx = parseDiff(diff);
+  const lineable = issues.filter(
+    (i) =>
+      i.severity !== 'SUGGESTION' &&
+      i.line > 0 &&
+      isLineInDiff(diffIdx, i.file, i.line)
+  );
+  const orphans = issues.filter((i) => !lineable.includes(i));
+
+  if (lineable.length === 0) return { posted: 0, orphans };
+
+  const comments = lineable.map((i) => ({
+    path: i.file,
+    line: i.line,
+    side: 'RIGHT' as const,
+    body: renderInlineBody(i),
+  }));
+
+  await dismissPriorBotReviews(octokit, owner, repo, prNumber);
+
+  await octokit.rest.pulls.createReview({
+    owner,
+    repo,
+    pull_number: prNumber,
+    commit_id: headSha,
+    event: 'COMMENT',
+    body: summary,
+    comments,
+  });
+
+  return { posted: lineable.length, orphans };
+}
+
+function renderInlineBody(i: Issue): string {
+  const tag =
+    i.severity === 'CRITICAL' ? '**CRITICAL**' : '**WARNING**';
+  return [
+    `${tag} — ${i.issue}`,
+    '',
+    `**Why:** ${i.why}`,
+    `**Fix:** ${i.fix}`,
+    `_confidence: ${i.confidence.toFixed(2)}_`,
+  ].join('\n');
+}
+
+async function dismissPriorBotReviews(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<void> {
+  try {
+    const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    const mine = reviews.filter(
+      (r) =>
+        r.user?.login?.toLowerCase() === 'bot-manavarya' &&
+        r.state !== 'DISMISSED' &&
+        r.state !== 'APPROVED' &&
+        r.state !== 'CHANGES_REQUESTED'
+    );
+    for (const r of mine) {
+      const comments = await octokit.paginate(
+        octokit.rest.pulls.listCommentsForReview,
+        { owner, repo, pull_number: prNumber, review_id: r.id, per_page: 100 }
+      );
+      for (const c of comments) {
+        await octokit.rest.pulls
+          .deleteReviewComment({ owner, repo, comment_id: c.id })
+          .catch(() => {});
+      }
+    }
+  } catch {
+    // best effort
+  }
+}
+
+export async function applyLabels(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  labels: string[]
+): Promise<void> {
+  if (labels.length === 0) return;
+  try {
+    await octokit.rest.issues.addLabels({
+      owner,
+      repo,
+      issue_number: prNumber,
+      labels,
+    });
+  } catch (e) {
+    // Labels don't exist yet — create them, then retry.
+    for (const name of labels) {
+      await octokit.rest.issues
+        .createLabel({
+          owner,
+          repo,
+          name,
+          color: colorFor(name),
+          description: 'Set by manavarya-bot',
+        })
+        .catch(() => {});
+    }
+    await octokit.rest.issues
+      .addLabels({ owner, repo, issue_number: prNumber, labels })
+      .catch(() => {});
+  }
+}
+
+function colorFor(label: string): string {
+  if (label.startsWith('risk:high')) return 'b60205';
+  if (label.startsWith('risk:med')) return 'fbca04';
+  if (label.startsWith('risk:low')) return '0e8a16';
+  if (label.startsWith('needs-tests')) return 'f9d0c4';
+  if (label.startsWith('security')) return '5319e7';
+  if (label.startsWith('size:xl')) return 'c5def5';
+  return 'ededed';
+}
+
+export function diffIndexFromString(diff: string): DiffIndex {
+  return parseDiff(diff);
 }

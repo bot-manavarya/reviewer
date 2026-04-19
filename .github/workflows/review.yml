@@ -38,7 +38,7 @@ jobs:
     runs-on: ${{ inputs.runner-label == '' && 'ubuntu-latest' || fromJSON(format('["self-hosted","{0}"]', inputs.runner-label)) }}
     permissions:
       pull-requests: write
-      contents: read
+      contents: write
       issues: write
     steps:
       - name: Run manavarya-bot
